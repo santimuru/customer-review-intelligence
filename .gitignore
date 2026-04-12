@@ -1,0 +1,9 @@
+# HuggingFace dataset cache (large, re-downloaded at runtime)
+data/
+__pycache__/
+*.pyc
+.env
+*.log
+
+# Keep model artifacts (pre-trained, needed for app)
+!models/
