@@ -1,3 +1,6 @@
+# Secrets — nunca subir a GitHub
+.env
+
 # HuggingFace dataset cache (large, re-downloaded at runtime)
 data/
 __pycache__/

@@ -6,6 +6,9 @@ NLP & LLM Churn Detection — Portfolio Project
 import os
 import sys
 import warnings
+from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")  # carga .env desde raíz del proyecto
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -742,12 +745,15 @@ def section_llm_features(meta, tfidf_model):
         unsafe_allow_html=True,
     )
 
-    api_key = st.text_input(
-        "Gemini API Key",
-        type="password",
-        placeholder="AIzaSy…",
-        help="Get a free key at https://aistudio.google.com",
-    )
+    import os
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        api_key = st.text_input(
+            "Gemini API Key",
+            type="password",
+            placeholder="AIzaSy… (o seteá GEMINI_API_KEY como variable de entorno)",
+            help="Get a free key at https://aistudio.google.com",
+        )
 
     if api_key:
         import google.generativeai as genai
