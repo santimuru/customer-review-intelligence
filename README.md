@@ -10,24 +10,24 @@ This project tests four progressively sophisticated NLP methods on a stratified 
 
 ## Live Dashboard
 
-| Section            | What you'll find                                                              |
-| ------------------ | ----------------------------------------------------------------------------- |
-| Overview           | Problem framing, methodology progression, KPIs, key findings                 |
-| Model Comparison   | ROC, Precision-Recall, metrics table, confusion matrices for all 4 models    |
-| Text Analyzer      | Score any review live across 3 models with SHAP explanation + VADER breakdown |
-| LLM Features       | Gemini-powered structured extraction: intent, emotion, complaint category    |
-| Business Insights  | Top churn/retention words, SHAP beeswarm, VADER sentiment distributions     |
+| Section           | What you'll find                                                              |
+| ----------------- | ----------------------------------------------------------------------------- |
+| Overview          | Problem framing, methodology progression, KPIs, key findings                  |
+| Model Comparison  | ROC, Precision-Recall, metrics table, confusion matrices for all 4 models     |
+| Text Analyzer     | Score any review live across 3 models with SHAP explanation + VADER breakdown |
+| LLM Features      | Gemini-powered structured extraction: intent, emotion, complaint category     |
+| Business Insights | Top churn/retention words, SHAP beeswarm, VADER sentiment distributions       |
 
 ---
 
 ## Four NLP Methods
 
-| Method                              | Approach                                                        |
-| ----------------------------------- | --------------------------------------------------------------- |
-| **TF-IDF + Logistic Regression**    | Word frequencies - fast, interpretable, strong baseline         |
-| **Engineered Features + XGBoost**   | 22 hand-crafted signals: VADER sentiment, keyword flags, style  |
-| **Sentence Embeddings + XGBoost**   | all-MiniLM-L6-v2 maps each review to a 384-dim semantic vector  |
-| **Zero-Shot LLM (Gemini)**          | No training - raw language model reasoning on the binary task   |
+| Method                            | Approach                                                       |
+| --------------------------------- | -------------------------------------------------------------- |
+| **TF-IDF + Logistic Regression**  | Word frequencies - fast, interpretable, strong baseline        |
+| **Engineered Features + XGBoost** | 22 hand-crafted signals: VADER sentiment, keyword flags, style |
+| **Sentence Embeddings + XGBoost** | all-MiniLM-L6-v2 maps each review to a 384-dim semantic vector |
+| **Zero-Shot LLM (Gemini)**        | No training - raw language model reasoning on the binary task  |
 
 Each method adds a layer beyond the previous: from word counts to meaning to zero-shot reasoning.
 
@@ -38,7 +38,7 @@ Each method adds a layer beyond the previous: from word counts to meaning to zer
 - Sentence embeddings outperform the TF-IDF baseline in AUC-ROC, confirming semantic meaning adds measurable signal.
 - Zero-shot Gemini achieves competitive performance with no training data at all.
 - Among engineered features, VADER sentiment signals carry significant weight in the XGBoost model.
-- Churn language is specific: words like *worst*, *terrible*, *waste*, *never* are highly predictive across methods.
+- Churn language is specific: words like _worst_, _terrible_, _waste_, _never_ are highly predictive across methods.
 
 ---
 
