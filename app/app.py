@@ -402,12 +402,40 @@ def section_overview(meta):
 def section_model_comparison(meta):
     st.markdown('<div class="idx">02 / MODELS</div>', unsafe_allow_html=True)
     st.markdown("## Model comparison")
+    st.markdown(
+        f'<p class="lede">Five representations of the same reviews, ranked. The headline bar '
+        f'reads top to bottom by AUC-ROC, the curves below show how each separates churn from '
+        f'retention, and the table carries every metric.</p>', unsafe_allow_html=True)
 
-    model_names = list(meta["models"].keys())
-    best_name   = max(meta["models"], key=lambda k: meta["models"][k]["roc_auc"])
-    tabs = st.tabs(["ROC", "Precision-Recall", "Metrics", "Confusion"])
+    best_name = max(meta["models"], key=lambda k: meta["models"][k]["roc_auc"])
 
-    with tabs[0]:
+    rows = []
+    for name, m in meta["models"].items():
+        rows.append({
+            "Model":          ("◆ " if name == best_name else "  ") + name,
+            "Accuracy":       round(m["accuracy"], 4),
+            "Precision":      round(m["precision"], 4),
+            "Recall":         round(m["recall"], 4),
+            "F1":             round(m["f1"], 4),
+            "AUC-ROC":        round(m["roc_auc"], 4),
+            "Avg Precision":  round(m["avg_precision"], 4),
+            "Train Time (s)": m["training_time"],
+        })
+
+    # Headline ranking bar
+    fig_rank = go.Figure(go.Bar(
+        x=[r["AUC-ROC"] for r in rows], y=[r["Model"] for r in rows], orientation="h",
+        marker_color=[RED if "◆" in r["Model"] else INK for r in rows],
+        text=[f'{r["AUC-ROC"]:.3f}' for r in rows], textposition="outside"))
+    fig_rank.update_layout(**PLOTLY_LAYOUT, title="Ranked by AUC-ROC",
+                           xaxis=dict(range=[0.5, 1.06]), height=300,
+                           margin=dict(l=0, r=0, t=40, b=10),
+                           yaxis=dict(autorange="reversed"))
+    st.plotly_chart(fig_rank, use_container_width=True)
+
+    # Curves side by side: ROC | Precision-Recall
+    cL, cR = st.columns(2, gap="large")
+    with cL:
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines",
                                  line=dict(dash="dot", color=INK_60, width=1), name="Random"))
@@ -416,14 +444,12 @@ def section_model_comparison(meta):
             fig.add_trace(go.Scatter(
                 x=roc["fpr"], y=roc["tpr"], mode="lines",
                 name=f"{name} ({m['roc_auc']:.3f})",
-                line=dict(color=SERIES[i % len(SERIES)],
-                          width=4 if name == best_name else 1.6)))
-        fig.update_layout(**PLOTLY_LAYOUT, title="ROC curve, all models",
+                line=dict(color=SERIES[i % len(SERIES)], width=4 if name == best_name else 1.6)))
+        fig.update_layout(**PLOTLY_LAYOUT, title="ROC curve",
                           xaxis_title="False positive rate", yaxis_title="True positive rate",
-                          legend=dict(x=0.55, y=0.08), height=480)
+                          legend=dict(x=0.4, y=0.06, font=dict(size=10)), height=440)
         st.plotly_chart(fig, use_container_width=True)
-
-    with tabs[1]:
+    with cR:
         fig = go.Figure()
         cr = meta["churn_rate"]
         fig.add_hline(y=cr, line_dash="dot", line_color=INK_60,
@@ -433,48 +459,28 @@ def section_model_comparison(meta):
             fig.add_trace(go.Scatter(
                 x=pr["recall"], y=pr["precision"], mode="lines",
                 name=f"{name} ({m['avg_precision']:.3f})",
-                line=dict(color=SERIES[i % len(SERIES)],
-                          width=4 if name == best_name else 1.6)))
-        fig.update_layout(**PLOTLY_LAYOUT, title="Precision-recall, all models",
+                line=dict(color=SERIES[i % len(SERIES)], width=4 if name == best_name else 1.6)))
+        fig.update_layout(**PLOTLY_LAYOUT, title="Precision-recall",
                           xaxis_title="Recall", yaxis_title="Precision",
-                          legend=dict(x=0.0, y=0.08), height=480)
+                          legend=dict(x=0.0, y=0.06, font=dict(size=10)), height=440)
         st.plotly_chart(fig, use_container_width=True)
 
-    with tabs[2]:
-        rows = []
-        for name, m in meta["models"].items():
-            rows.append({
-                "Model":          ("◆ " if name == best_name else "  ") + name,
-                "Accuracy":       round(m["accuracy"], 4),
-                "Precision":      round(m["precision"], 4),
-                "Recall":         round(m["recall"], 4),
-                "F1":             round(m["f1"], 4),
-                "AUC-ROC":        round(m["roc_auc"], 4),
-                "Avg Precision":  round(m["avg_precision"], 4),
-                "Train Time (s)": m["training_time"],
-            })
-        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
-        rule("AUC-ROC", "Higher is better")
-        fig2 = go.Figure(go.Bar(
-            x=[r["AUC-ROC"] for r in rows], y=[r["Model"] for r in rows],
-            orientation="h",
-            marker_color=[RED if "◆" in r["Model"] else INK for r in rows],
-            text=[f'{r["AUC-ROC"]:.3f}' for r in rows], textposition="outside"))
-        fig2.update_layout(**PLOTLY_LAYOUT, xaxis=dict(range=[0.5, 1.05]),
-                           height=280, margin=dict(l=0, r=0, t=10, b=10))
-        st.plotly_chart(fig2, use_container_width=True)
+    # Full metrics table + compact confusion matrices, under one rule
+    rule("Every metric", "Test set, plus confusion at the chosen threshold")
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
-    with tabs[3]:
-        fig = make_subplots(rows=1, cols=len(model_names), subplot_titles=model_names)
-        for i, (name, m) in enumerate(meta["models"].items()):
-            cm = np.array(m["confusion_matrix"])
-            fig.add_trace(go.Heatmap(
-                z=cm, x=["Pred retain", "Pred churn"], y=["Act retain", "Act churn"],
-                colorscale=[[0, PAPER], [1, RED]], showscale=(i == 0),
-                text=cm, texttemplate="%{text}", textfont=dict(size=14, color=INK)),
-                row=1, col=i + 1)
-        fig.update_layout(**PLOTLY_LAYOUT, height=320, margin=dict(t=50))
-        st.plotly_chart(fig, use_container_width=True)
+    cm_fig = make_subplots(rows=1, cols=len(rows),
+                           subplot_titles=[n.replace(" + ", "+") for n in meta["models"]])
+    for i, (name, m) in enumerate(meta["models"].items()):
+        cm = np.array(m["confusion_matrix"])
+        cm_fig.add_trace(go.Heatmap(
+            z=cm, x=["Pred retain", "Pred churn"], y=["Act retain", "Act churn"],
+            colorscale=[[0, PAPER], [1, RED]], showscale=False,
+            text=cm, texttemplate="%{text}", textfont=dict(size=13, color=INK)),
+            row=1, col=i + 1)
+    cm_fig.update_layout(**PLOTLY_LAYOUT, height=260, margin=dict(t=46, b=10))
+    cm_fig.update_annotations(font_size=10)
+    st.plotly_chart(cm_fig, use_container_width=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -774,7 +780,7 @@ def section_business_insights(meta):
         sorted_names = [feat_names[i] for i in order]
         sorted_shap  = shap_vals[:, order]
         sorted_X     = X_arr[:, order]
-        X_norm = (sorted_X - sorted_X.min(axis=0)) / (sorted_X.ptp(axis=0) + 1e-9)
+        X_norm = (sorted_X - sorted_X.min(axis=0)) / (np.ptp(sorted_X, axis=0) + 1e-9)
         rng_j = np.random.default_rng(42)
         jitter = rng_j.uniform(-0.35, 0.35, size=sorted_shap.shape)
         fig = go.Figure()
