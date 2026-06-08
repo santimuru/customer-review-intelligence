@@ -4,19 +4,19 @@
 
 By the time a customer leaves a 1-star review, they have already churned. The real question is whether churn signals are detectable in language itself — the choice of words, tone, and emotion — before an explicit rating is given.
 
-This project tests four progressively sophisticated NLP methods on 650K Yelp reviews, treating 1-2 star reviews as churn signals and 4-5 star reviews as retention signals.
+This project tests four progressively sophisticated NLP methods on a stratified 48K-review sample (from the 650K Yelp Review Full dataset), treating 1-2 star reviews as churn signals and 4-5 star reviews as retention signals.
 
 ---
 
 ## Live Dashboard
 
-| Section             | What you'll find                                                              |
-| ------------------- | ----------------------------------------------------------------------------- |
-| 📊 Overview         | Problem framing, methodology progression, KPIs, key findings                 |
-| 📈 Model Comparison | ROC, Precision-Recall, metrics table, confusion matrices for all 4 models    |
-| ⭐ Text Analyzer    | Score any review live across 3 models with SHAP explanation + VADER breakdown |
-| 🤖 LLM Features     | Gemini-powered structured extraction: intent, emotion, complaint category    |
-| 💡 Business Insights | Top churn/retention words, SHAP beeswarm, VADER sentiment distributions     |
+| Section            | What you'll find                                                              |
+| ------------------ | ----------------------------------------------------------------------------- |
+| Overview           | Problem framing, methodology progression, KPIs, key findings                 |
+| Model Comparison   | ROC, Precision-Recall, metrics table, confusion matrices for all 4 models    |
+| Text Analyzer      | Score any review live across 3 models with SHAP explanation + VADER breakdown |
+| LLM Features       | Gemini-powered structured extraction: intent, emotion, complaint category    |
+| Business Insights  | Top churn/retention words, SHAP beeswarm, VADER sentiment distributions     |
 
 ---
 
@@ -37,14 +37,14 @@ Each method adds a layer beyond the previous: from word counts to meaning to zer
 
 - Sentence embeddings outperform the TF-IDF baseline in AUC-ROC, confirming semantic meaning adds measurable signal.
 - Zero-shot Gemini achieves competitive performance with no training data at all.
-- VADER compound score is the single strongest engineered feature (per SHAP) - sentiment polarity dominates.
+- Among engineered features, VADER sentiment signals carry significant weight in the XGBoost model.
 - Churn language is specific: words like *worst*, *terrible*, *waste*, *never* are highly predictive across methods.
 
 ---
 
 ## Dataset
 
-Yelp Review Full dataset - 650K reviews, 5 rating classes, mapped to binary churn/retain. Downloaded automatically via HuggingFace Datasets (~700MB, first run only).
+Yelp Review Full dataset - 650K reviews, 5 rating classes. Training uses a stratified 40K-review sample (20K churn + 20K retain) and an 8K test set, downloaded automatically via HuggingFace Datasets (~700MB, first run only).
 
 ---
 

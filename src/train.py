@@ -6,12 +6,9 @@ Run from project root: python src/train.py
 import os
 import time
 import re
-import warnings
 import numpy as np
 import pandas as pd
 import joblib
-
-warnings.filterwarnings("ignore")
 
 # Pre-import torch/transformers BEFORE xgboost/sklearn heavy C-extensions
 # to avoid WinError 1114 DLL init failure on Windows
@@ -99,6 +96,17 @@ def compute_metrics(y_true, y_pred, y_prob):
 # 3. MODEL 1 — TF-IDF + LOGISTIC REGRESSION
 # ══════════════════════════════════════════════════════════════════════════
 
+def _top_tfidf_words(pipe):
+    """Extract top churn/retain words from a fitted TF-IDF + LR pipeline."""
+    tfidf_vec = pipe.named_steps["tfidf"]
+    lr        = pipe.named_steps["clf"]
+    feature_names = tfidf_vec.get_feature_names_out()
+    coefs = lr.coef_[0]
+    top_churn_words  = [feature_names[i] for i in coefs.argsort()[-20:][::-1]]
+    top_retain_words = [feature_names[i] for i in coefs.argsort()[:20]]
+    return top_churn_words, top_retain_words
+
+
 def train_tfidf(X_train, y_train, X_test, y_test):
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.linear_model import LogisticRegression
@@ -119,17 +127,7 @@ def train_tfidf(X_train, y_train, X_test, y_test):
     metrics = compute_metrics(y_test, y_pred, y_prob)
     metrics["training_time"] = round(elapsed, 2)
 
-    # Top predictive words
-    tfidf_vec = pipe.named_steps["tfidf"]
-    lr        = pipe.named_steps["clf"]
-    feature_names = tfidf_vec.get_feature_names_out()
-    coefs = lr.coef_[0]
-
-    top_churn_idx   = coefs.argsort()[-20:][::-1]
-    top_retain_idx  = coefs.argsort()[:20]
-
-    top_churn_words  = [feature_names[i] for i in top_churn_idx]
-    top_retain_words = [feature_names[i] for i in top_retain_idx]
+    top_churn_words, top_retain_words = _top_tfidf_words(pipe)
 
     print(f"   AUC-ROC: {metrics['roc_auc']:.4f} | Time: {elapsed:.1f}s")
     print(f"   Top churn words: {top_churn_words[:5]}")
@@ -401,19 +399,13 @@ def main():
     tfidf_path = os.path.join(MODELS_DIR, "tfidf_model.pkl")
     if os.path.exists(tfidf_path):
         print("\n[2/6] Model 1: TF-IDF + LR — loading cached model...")
+        t0_cached = time.time()
         pipe = joblib.load(tfidf_path)
         y_pred = pipe.predict(X_test)
         y_prob = pipe.predict_proba(X_test)[:, 1]
         m1_metrics = compute_metrics(y_test, y_pred, y_prob)
-        m1_metrics["training_time"] = 12.1  # cached from prior run
-        tfidf_vec = pipe.named_steps["tfidf"]
-        lr = pipe.named_steps["clf"]
-        feature_names_tfidf = tfidf_vec.get_feature_names_out()
-        coefs = lr.coef_[0]
-        top_churn_idx   = coefs.argsort()[-20:][::-1]
-        top_retain_idx  = coefs.argsort()[:20]
-        top_churn_words  = [feature_names_tfidf[i] for i in top_churn_idx]
-        top_retain_words = [feature_names_tfidf[i] for i in top_retain_idx]
+        m1_metrics["cache_load_time"] = round(time.time() - t0_cached, 2)  # cache+inference time, not training
+        top_churn_words, top_retain_words = _top_tfidf_words(pipe)
         print(f"   AUC-ROC: {m1_metrics['roc_auc']:.4f} (cached)")
     else:
         m1_metrics, top_churn_words, top_retain_words = train_tfidf(

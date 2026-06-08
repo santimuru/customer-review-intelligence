@@ -1,24 +1,20 @@
 """
 app.py — Streamlit app: Customer Review Intelligence
-NLP & LLM Churn Detection — Portfolio Project
+NLP churn detection — Portfolio Project
 """
 
 import os
 import sys
-import warnings
 from pathlib import Path
 from dotenv import load_dotenv
-load_dotenv(Path(__file__).resolve().parent.parent / ".env")  # carga .env desde raíz del proyecto
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
-import plotly.express as px
 from plotly.subplots import make_subplots
 import joblib
 import re
-
-warnings.filterwarnings("ignore")
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,13 +35,22 @@ PLOTLY_LAYOUT = dict(
     font          = dict(color="#1E293B"),
 )
 
+
+def risk_label(prob: float) -> tuple[str, str]:
+    """Return (label, color) for a churn probability in [0, 1]."""
+    if prob >= 0.6:
+        return "HIGH RISK", C_DANGER
+    if prob >= 0.4:
+        return "MEDIUM", C_WARNING
+    return "LOW RISK", C_SAFE
+
 # ══════════════════════════════════════════════════════════════════════════
 # PAGE CONFIG
 # ══════════════════════════════════════════════════════════════════════════
 
 st.set_page_config(
     page_title = "Review Intelligence",
-    page_icon  = "📝",
+    page_icon  = "R",
     layout     = "wide",
     initial_sidebar_state = "expanded",
 )
@@ -132,9 +137,9 @@ def extract_features_single(text):
 def render_sidebar(meta):
     with st.sidebar:
         st.markdown("""
-        <h2 style="margin-bottom:0; color:inherit;">📝 Review Intelligence</h2>
+        <h2 style="margin-bottom:0; color:inherit;">Review Intelligence</h2>
         <p style="color:inherit; opacity:0.7; margin-top:2px; font-size:0.85rem;">
-        NLP & LLM Churn Detection
+        NLP churn detection
         </p>
         """, unsafe_allow_html=True)
 
@@ -165,10 +170,12 @@ def render_sidebar(meta):
 # ══════════════════════════════════════════════════════════════════════════
 
 def section_overview(meta):
-    st.markdown("""
+    n_total = meta["n_train"] + meta["n_test"]
+    st.markdown(f"""
     <h1 style="color:inherit;">Can text alone predict churn risk?</h1>
     <p style="color:inherit; font-size:1.1rem; opacity:0.8;">
-    4 progressive NLP methods — from TF-IDF to Zero-Shot LLMs — on 650K Yelp reviews
+    4 progressive NLP methods &mdash; from TF-IDF to Zero-Shot LLMs &mdash; trained on {n_total:,} reviews
+    (sampled from the 650K Yelp Review Full dataset)
     </p>
     """, unsafe_allow_html=True)
 
@@ -227,16 +234,16 @@ def section_overview(meta):
     st.markdown('<h3 style="color:inherit;">Methodology Progression</h3>', unsafe_allow_html=True)
 
     cards = [
-        ("🔢 TF-IDF Baseline",
-         "Count-based word frequencies + Logistic Regression. Fast, interpretable, surprisingly strong.",
+        ("TF-IDF Baseline",
+         "Count-based word frequencies + Logistic Regression. Fast, interpretable baseline.",
          C_PRIMARY),
-        ("⚙️ Feature Engineering",
+        ("Feature Engineering",
          "22 hand-crafted signals: VADER sentiment, keyword flags, stylistic patterns + XGBoost.",
          C_WARNING),
-        ("🧠 Semantic Embeddings",
+        ("Semantic Embeddings",
          "all-MiniLM-L6-v2 turns each review into a 384-dim dense vector capturing meaning, not just words.",
          C_INFO),
-        ("🤖 Zero-Shot LLM",
+        ("Zero-Shot LLM",
          "No training at all — raw language model reasoning. Shows what off-the-shelf LLMs can do.",
          C_SAFE),
     ]
@@ -260,11 +267,22 @@ def section_overview(meta):
     delta_emb_vs_tfidf = auc_vals["Sentence Embeddings + XGBoost"] - auc_vals["TF-IDF + LR"]
     delta_zs_vs_feats  = auc_vals["Zero-Shot LLM"] - auc_vals["Engineered Features + XGBoost"]
 
+    # Top SHAP feature derived from saved values
+    shap_feat_names = meta.get("shap_feature_names", [])
+    shap_vals_arr   = np.array(meta.get("shap_values", []))
+    if len(shap_feat_names) and shap_vals_arr.ndim == 2:
+        top_shap_feat = shap_feat_names[int(np.abs(shap_vals_arr).mean(axis=0).argmax())]
+    else:
+        top_shap_feat = None
+
     findings = [
         f"**Best model ({best_name})** achieves AUC-ROC of **{best_auc:.4f}** — strong predictive signal from text alone.",
         f"Sentence embeddings {'beat' if delta_emb_vs_tfidf > 0 else 'trail'} TF-IDF baseline by **{abs(delta_emb_vs_tfidf):.4f} AUC** — semantic meaning adds measurable value.",
         f"Zero-shot LLM {'outperforms' if delta_zs_vs_feats > 0 else 'underperforms vs.'} engineered features by **{abs(delta_zs_vs_feats):.4f} AUC** with zero training data.",
-        "VADER compound score is the single strongest engineered feature (per SHAP), confirming sentiment polarity is the dominant signal.",
+        *(
+            [f"**{top_shap_feat}** is the highest-impact engineered feature by mean |SHAP|."]
+            if top_shap_feat else []
+        ),
         f"Churn language is specific: words like *{', '.join(meta['top_churn_words'][:4])}* are highly predictive.",
     ]
 
@@ -282,7 +300,7 @@ def section_model_comparison(meta):
     model_names = list(meta["models"].keys())
     best_name   = max(meta["models"], key=lambda k: meta["models"][k]["roc_auc"])
 
-    tabs = st.tabs(["📈 ROC Curves", "📉 Precision-Recall", "📊 Metrics Table", "🔲 Confusion Matrices"])
+    tabs = st.tabs(["ROC Curves", "Precision-Recall", "Metrics Table", "Confusion Matrices"])
 
     # ── ROC ────────────────────────────────────────────────────────
     with tabs[0]:
@@ -414,7 +432,7 @@ def section_model_comparison(meta):
 # ══════════════════════════════════════════════════════════════════════════
 
 def section_text_analyzer(meta, tfidf_model, feat_model, emb_model):
-    st.markdown('<h2 style="color:inherit;">⭐ Text Analyzer</h2>', unsafe_allow_html=True)
+    st.markdown('<h2 style="color:inherit;">Text Analyzer</h2>', unsafe_allow_html=True)
     st.markdown(
         '<p style="color:inherit; opacity:0.8;">Score any review in real-time across 3 models '
         '(Zero-Shot excluded — too slow for live inference).</p>',
@@ -477,8 +495,7 @@ def _run_analysis(text, meta, tfidf_model, feat_model, emb_model):
 
     cols = st.columns(3)
     for col, (mname, prob, color) in zip(cols, model_results):
-        risk_label = "HIGH RISK" if prob >= 0.6 else ("MEDIUM" if prob >= 0.4 else "LOW RISK")
-        risk_color = C_DANGER if prob >= 0.6 else (C_WARNING if prob >= 0.4 else C_SAFE)
+        rl, risk_color = risk_label(prob)
         col.markdown(f"""
         <div style="background:rgba(0,0,0,0.04); border-radius:10px; padding:1rem; text-align:center; border:1px solid rgba(0,0,0,0.08);">
           <div style="color:inherit; font-size:0.85rem; opacity:0.7; margin-bottom:0.3rem;">{mname}</div>
@@ -486,7 +503,7 @@ def _run_analysis(text, meta, tfidf_model, feat_model, emb_model):
           <div style="display:inline-block; background:{risk_color}22; color:{risk_color};
                       border:1px solid {risk_color}55; border-radius:20px;
                       padding:2px 12px; font-size:0.8rem; font-weight:600; margin-top:0.3rem;">
-            {risk_label}
+            {rl}
           </div>
           <div style="color:inherit; opacity:0.6; font-size:0.78rem; margin-top:0.5rem;">churn probability</div>
         </div>
@@ -572,10 +589,10 @@ def _run_analysis(text, meta, tfidf_model, feat_model, emb_model):
                 f'{w}</span>'
                 for w in found_churn
             )
-            st.markdown(f'<p style="color:inherit;">🔴 Churn signals: {badges}</p>',
+            st.markdown(f'<p style="color:inherit;">Churn signals: {badges}</p>',
                         unsafe_allow_html=True)
         else:
-            st.markdown('<p style="color:inherit; opacity:0.6;">🔴 No churn keywords found</p>',
+            st.markdown('<p style="color:inherit; opacity:0.6;">No churn keywords found</p>',
                         unsafe_allow_html=True)
     with kc2:
         if found_retain:
@@ -586,10 +603,10 @@ def _run_analysis(text, meta, tfidf_model, feat_model, emb_model):
                 f'{w}</span>'
                 for w in found_retain
             )
-            st.markdown(f'<p style="color:inherit;">🟢 Retention signals: {badges}</p>',
+            st.markdown(f'<p style="color:inherit;">Retention signals: {badges}</p>',
                         unsafe_allow_html=True)
         else:
-            st.markdown('<p style="color:inherit; opacity:0.6;">🟢 No retention keywords found</p>',
+            st.markdown('<p style="color:inherit; opacity:0.6;">No retention keywords found</p>',
                         unsafe_allow_html=True)
 
 
@@ -630,16 +647,6 @@ DEMO_GEMINI = {
     "ml_score": 0.87,
 }
 
-FIELD_ICONS = {
-    "complaint_category": "🏷️",
-    "churn_intent":       "⚠️",
-    "urgency":            "🔥",
-    "emotion":            "😤",
-    "key_phrases":        "💬",
-    "positive_aspects":   "✅",
-    "churn_risk_score":   "📊",
-}
-
 RISK_COLORS = {
     "explicit": C_DANGER,
     "implicit": C_WARNING,
@@ -672,7 +679,7 @@ def render_gemini_result(result: dict, ml_score: float):
                         padding:0.6rem 1rem; margin-bottom:0.5rem;
                         border-left:3px solid {color};">
               <span style="color:inherit; opacity:0.6; font-size:0.78rem;">
-                {FIELD_ICONS.get(key,'')} {key.replace('_',' ').upper()}
+                {key.replace('_',' ').upper()}
               </span><br>
               <strong style="color:inherit;">{val}</strong>
             </div>
@@ -690,7 +697,7 @@ def render_gemini_result(result: dict, ml_score: float):
             <div style="background:rgba(0,0,0,0.04); border-radius:8px;
                         padding:0.6rem 1rem; margin-bottom:0.5rem;">
               <span style="color:inherit; opacity:0.6; font-size:0.78rem;">
-                {FIELD_ICONS.get(key,'')} {key.replace('_',' ').upper()}
+                {key.replace('_',' ').upper()}
               </span><br>
               {pills}
             </div>
@@ -705,7 +712,7 @@ def render_gemini_result(result: dict, ml_score: float):
 
     sc1, sc2 = st.columns(2)
     with sc1:
-        sc_color = C_DANGER if ml_score >= 0.6 else (C_WARNING if ml_score >= 0.4 else C_SAFE)
+        _, sc_color = risk_label(ml_score)
         st.markdown(f"""
         <div style="text-align:center; background:rgba(0,0,0,0.04);
                     border-radius:10px; padding:1rem;">
@@ -715,7 +722,7 @@ def render_gemini_result(result: dict, ml_score: float):
         </div>
         """, unsafe_allow_html=True)
     with sc2:
-        g_color = C_DANGER if gemini_norm >= 0.6 else (C_WARNING if gemini_norm >= 0.4 else C_SAFE)
+        _, g_color = risk_label(gemini_norm)
         st.markdown(f"""
         <div style="text-align:center; background:rgba(0,0,0,0.04);
                     border-radius:10px; padding:1rem;">
@@ -725,16 +732,6 @@ def render_gemini_result(result: dict, ml_score: float):
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("""
-    <div style="background:rgba(6,182,212,0.08); border-left:3px solid #06B6D4;
-                padding:0.8rem 1rem; border-radius:0 8px 8px 0; margin-top:1rem;">
-    <p style="color:inherit; margin:0; font-size:0.88rem;">
-    <strong>Why this matters:</strong> The ML model sees statistical patterns in word frequencies and embeddings.
-    Gemini understands <em>semantics</em> — intent, complaint category, emotional state — that bag-of-words
-    models completely miss. Together they provide complementary signals for production churn systems.
-    </p>
-    </div>
-    """, unsafe_allow_html=True)
 
 
 def section_llm_features(meta, tfidf_model):
@@ -820,7 +817,7 @@ def section_llm_features(meta, tfidf_model):
 def section_business_insights(meta):
     st.markdown('<h2 style="color:inherit;">Business Insights</h2>', unsafe_allow_html=True)
 
-    tabs = st.tabs(["🔤 Word Analysis", "🧩 What Drives Churn?", "📊 Sentiment Distribution"])
+    tabs = st.tabs(["Word Analysis", "What Drives Churn?", "Sentiment Distribution"])
 
     # ── Word Analysis ─────────────────────────────────────────────
     with tabs[0]:
@@ -891,7 +888,7 @@ def section_business_insights(meta):
         # Normalise feature values for colouring
         X_norm = (sorted_X - sorted_X.min(axis=0)) / (sorted_X.ptp(axis=0) + 1e-9)
 
-        rng_j = np.random.default_rng(SEED if 'SEED' in dir() else 42)
+        rng_j = np.random.default_rng(42)
         jitter = rng_j.uniform(-0.35, 0.35, size=sorted_shap.shape)
 
         fig = go.Figure()
@@ -968,18 +965,17 @@ def section_business_insights(meta):
         )
         st.plotly_chart(fig, use_container_width=True)
 
-        st.markdown("""
-        <div style="background:rgba(99,91,255,0.08); border-left:3px solid #635BFF;
-                    padding:0.8rem 1rem; border-radius:0 8px 8px 0;">
-        <strong style="color:inherit;">Interpretation:</strong>
-        <p style="color:inherit; margin:0.4rem 0 0 0; font-size:0.9rem;">
-        Churn-risk reviews cluster at strongly negative compound scores (−1 to −0.5),
-        while retained customers dominate the positive range (+0.5 to +1).
-        The overlap region (−0.3 to +0.3) is where models must rely on
-        subtler linguistic signals beyond raw sentiment polarity.
-        </p>
-        </div>
-        """, unsafe_allow_html=True)
+        # Compute churn/retain median compound from the loaded data
+        vader_stats = meta.get("vader_stats", {})
+        churn_compound_list  = vader_stats.get("churn",  [])
+        retain_compound_list = vader_stats.get("retain", [])
+        if churn_compound_list and retain_compound_list:
+            churn_med  = float(np.median(churn_compound_list))
+            retain_med = float(np.median(retain_compound_list))
+            st.caption(
+                f"Median compound score — churn: {churn_med:.3f}, retained: {retain_med:.3f}. "
+                "Where the distributions overlap, models rely on subtler linguistic signals."
+            )
 
 
 # ══════════════════════════════════════════════════════════════════════════
