@@ -48,12 +48,11 @@ PLOTLY_LAYOUT = dict(
     plot_bgcolor  = PAPER,
     paper_bgcolor = PAPER,
     font          = dict(color=INK, family="Archivo, sans-serif", size=13),
-    title_font    = dict(color=INK, family="Archivo, sans-serif", size=15),
     colorway      = SERIES,
     template      = PLOTLY_TEMPLATE,
 )
 
-NAV = ["Overview", "Models", "Analyzer", "LLM Extract", "Insights"]
+NAV = ["Overview", "Models", "Analyze", "Insights"]
 
 
 def risk_label(prob: float) -> tuple[str, str]:
@@ -286,7 +285,8 @@ def extract_features_single(text):
 def masthead(meta):
     sub = "NLP churn detection from raw review text"
     if meta:
-        sub = f"{meta['n_train'] + meta['n_test']:,} reviews · churn vs retain · 5 NLP methods"
+        n_methods = len(meta["models"])
+        sub = f"{meta['n_train'] + meta['n_test']:,} reviews · churn vs retain · {n_methods} NLP methods"
     st.markdown(
         f"""<div class="masthead">
         <span class="brand">Review Intelligence</span>
@@ -309,10 +309,14 @@ def section_overview(meta):
     best_auc  = max(m["roc_auc"] for m in meta["models"].values())
     best_name = max(meta["models"], key=lambda k: meta["models"][k]["roc_auc"])
 
+    n_methods = len(meta["models"])
+    n_word = {3: "Three", 4: "Four", 5: "Five", 6: "Six"}.get(n_methods, str(n_methods))
+    n_word_lower = n_word.lower()
+
     st.markdown('<div class="idx">01 / OVERVIEW</div>', unsafe_allow_html=True)
     st.markdown("# Can text alone<br>predict churn?", unsafe_allow_html=True)
     st.markdown(
-        f"""<p class="lede">Five NLP methods, from a TF-IDF baseline to a zero-shot LLM,
+        f"""<p class="lede">{n_word} NLP methods, from a TF-IDF baseline to a zero-shot LLM,
         trained on <b>{n_total:,}</b> reviews sampled from the 650K Yelp Review Full corpus.
         One-and-two-star reviews are treated as churn signal, four-and-five-star as retention.</p>""",
         unsafe_allow_html=True,
@@ -337,8 +341,8 @@ def section_overview(meta):
             not what will happen.</p>
             <p class="lede">The real question is whether churn is legible in the language itself,
             in word choice, tone and emotion, before any explicit rating is given. This project
-            answers it by escalating through five progressively richer representations of the
-            same text.</p>""",
+            answers it by escalating through {n_word_lower} progressively richer representations
+            of the same text.</p>""",
             unsafe_allow_html=True,
         )
     with cR:
@@ -355,7 +359,7 @@ def section_overview(meta):
                     unsafe_allow_html=True)
         st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
-    rule("Methodology", "Five representations of text")
+    rule("Methodology", f"{n_word} representations of text")
     steps = [
         ("TF-IDF baseline",
          "Word-frequency vectors into logistic regression. Fast, fully interpretable floor."),
@@ -400,17 +404,23 @@ def section_overview(meta):
 # 02 · MODELS
 # ─────────────────────────────────────────────────────────────────────────────
 def section_model_comparison(meta):
+    n_methods = len(meta["models"])
+    n_word = {3: "Three", 4: "Four", 5: "Five", 6: "Six"}.get(n_methods, str(n_methods))
+
     st.markdown('<div class="idx">02 / MODELS</div>', unsafe_allow_html=True)
     st.markdown("## Model comparison")
     st.markdown(
-        f'<p class="lede">Five representations of the same reviews, ranked. The headline bar '
+        f'<p class="lede">{n_word} representations of the same reviews, ranked. The headline bar '
         f'reads top to bottom by AUC-ROC, the curves below show how each separates churn from '
         f'retention, and the table carries every metric.</p>', unsafe_allow_html=True)
 
     best_name = max(meta["models"], key=lambda k: meta["models"][k]["roc_auc"])
 
+    # Order rows by AUC-ROC descending so the table and headline bar actually read as a ranking.
+    ranked = sorted(meta["models"].items(), key=lambda kv: kv[1]["roc_auc"], reverse=True)
+
     rows = []
-    for name, m in meta["models"].items():
+    for name, m in ranked:
         rows.append({
             "Model":          ("◆ " if name == best_name else "  ") + name,
             "Accuracy":       round(m["accuracy"], 4),
@@ -422,15 +432,16 @@ def section_model_comparison(meta):
             "Train Time (s)": m["training_time"],
         })
 
-    # Headline ranking bar
+    # Headline ranking bar. Plotly reverses the y axis, so feed it worst-to-best
+    # and the highest AUC lands on top.
+    bar_rows = list(reversed(rows))
     fig_rank = go.Figure(go.Bar(
-        x=[r["AUC-ROC"] for r in rows], y=[r["Model"] for r in rows], orientation="h",
-        marker_color=[RED if "◆" in r["Model"] else INK for r in rows],
-        text=[f'{r["AUC-ROC"]:.3f}' for r in rows], textposition="outside"))
+        x=[r["AUC-ROC"] for r in bar_rows], y=[r["Model"] for r in bar_rows], orientation="h",
+        marker_color=[RED if "◆" in r["Model"] else INK for r in bar_rows],
+        text=[f'{r["AUC-ROC"]:.3f}' for r in bar_rows], textposition="outside"))
     fig_rank.update_layout(**PLOTLY_LAYOUT, title="Ranked by AUC-ROC",
                            xaxis=dict(range=[0.5, 1.06]), height=300,
-                           margin=dict(l=0, r=0, t=40, b=10),
-                           yaxis=dict(autorange="reversed"))
+                           margin=dict(l=0, r=0, t=40, b=10))
     st.plotly_chart(fig_rank, use_container_width=True)
 
     # Curves side by side: ROC | Precision-Recall
@@ -469,29 +480,33 @@ def section_model_comparison(meta):
     rule("Every metric", "Test set, plus confusion at the chosen threshold")
     st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
-    cm_fig = make_subplots(rows=1, cols=len(rows),
+    cm_fig = make_subplots(rows=1, cols=len(rows), horizontal_spacing=0.035,
                            subplot_titles=[n.replace(" + ", "+") for n in meta["models"]])
     for i, (name, m) in enumerate(meta["models"].items()):
         cm = np.array(m["confusion_matrix"])
         cm_fig.add_trace(go.Heatmap(
-            z=cm, x=["Pred retain", "Pred churn"], y=["Act retain", "Act churn"],
+            z=cm, x=["Pred retain", "Pred churn"], y=["Retain", "Churn"],
             colorscale=[[0, PAPER], [1, RED]], showscale=False,
             text=cm, texttemplate="%{text}", textfont=dict(size=13, color=INK)),
             row=1, col=i + 1)
-    cm_fig.update_layout(**PLOTLY_LAYOUT, height=260, margin=dict(t=46, b=10))
-    cm_fig.update_annotations(font_size=10)
+        cm_fig.update_yaxes(autorange="reversed", row=1, col=i + 1,
+                            showticklabels=(i == 0))   # y labels only on the first matrix
+        cm_fig.update_xaxes(tickfont=dict(size=10), row=1, col=i + 1)
+    cm_fig.update_layout(**PLOTLY_LAYOUT, height=240, margin=dict(l=10, r=10, t=44, b=10))
+    cm_fig.update_annotations(font_size=11)
     st.plotly_chart(cm_fig, use_container_width=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 03 · ANALYZER
 # ─────────────────────────────────────────────────────────────────────────────
-def section_text_analyzer(meta, tfidf_model, feat_model, emb_model):
-    st.markdown('<div class="idx">03 / ANALYZER</div>', unsafe_allow_html=True)
+def section_analyze(meta, tfidf_model, feat_model, emb_model):
+    st.markdown('<div class="idx">03 / ANALYZE</div>', unsafe_allow_html=True)
     st.markdown("## Score any review")
     st.markdown(
-        f'<p class="lede">Live scoring across three models. Zero-shot is excluded here, '
-        f'too slow for interactive inference.</p>', unsafe_allow_html=True)
+        f'<p class="lede">One review, every lens. Three trained models score it for churn risk, '
+        f'SHAP and VADER explain why, and Gemini extracts structured fields from the same text.</p>',
+        unsafe_allow_html=True)
 
     example_type = st.selectbox(
         "Quick-load an example",
@@ -512,6 +527,9 @@ def section_text_analyzer(meta, tfidf_model, feat_model, emb_model):
             _run_analysis(text_input.strip(), meta, tfidf_model, feat_model, emb_model)
     elif run:
         st.warning("Enter a review first.")
+
+    # Structured LLM extraction lives in the same section, on the same review text.
+    gemini_block(text_input.strip(), tfidf_model)
 
 
 def _run_analysis(text, meta, tfidf_model, feat_model, emb_model):
@@ -685,13 +703,13 @@ def render_gemini_result(result: dict, ml_score: float):
             unsafe_allow_html=True)
 
 
-def section_llm_features(meta, tfidf_model):
-    st.markdown('<div class="idx">04 / LLM EXTRACT</div>', unsafe_allow_html=True)
-    st.markdown("## Structured extraction")
+def gemini_block(text, tfidf_model):
+    """Structured LLM extraction on the review typed above. Live with a key, demo without."""
+    rule("Structured extraction", "Gemini 1.5 Flash")
     st.markdown(
-        f'<p class="lede">Gemini 1.5 Flash turns free text into typed fields: complaint category, '
-        f'churn intent, urgency, emotion. Semantic structure the classifiers never see.</p>',
-        unsafe_allow_html=True)
+        f'<p class="lede">Beyond a probability, Gemini turns the same review into typed fields: '
+        f'complaint category, churn intent, urgency, emotion. Semantic structure the '
+        f'classifiers never see.</p>', unsafe_allow_html=True)
 
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
@@ -702,23 +720,21 @@ def section_llm_features(meta, tfidf_model):
     if api_key:
         import google.generativeai as genai
         import json
-        genai.configure(api_key=api_key)
-        gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-        review_text = st.text_area("Review to analyze", height=110,
-                                   placeholder="Paste any customer review.")
         if st.button("Extract with Gemini"):
-            if not review_text.strip():
-                st.warning("Enter a review first.")
+            if not text:
+                st.warning("Type a review above first.")
             else:
                 with st.spinner("Calling Gemini"):
                     try:
-                        prompt   = EXTRACTION_PROMPT.format(text=review_text.strip())
+                        genai.configure(api_key=api_key)
+                        gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+                        prompt   = EXTRACTION_PROMPT.format(text=text)
                         response = gemini_model.generate_content(prompt)
                         raw      = response.text.strip()
                         raw = re.sub(r"^```(?:json)?\s*", "", raw)
                         raw = re.sub(r"\s*```$", "", raw)
                         result   = json.loads(raw)
-                        ml_score = float(tfidf_model.predict_proba([review_text.strip()])[0, 1])
+                        ml_score = float(tfidf_model.predict_proba([text])[0, 1])
                         render_gemini_result(result, ml_score)
                     except json.JSONDecodeError:
                         st.error("Gemini returned invalid JSON. Try again.")
@@ -728,8 +744,8 @@ def section_llm_features(meta, tfidf_model):
     else:
         st.markdown(
             f"""<div class="blk blk-fill" style="border-color:{RED};margin-bottom:1rem;">
-            <strong>Demo mode.</strong> No API key set, showing a pre-computed example.
-            Enter a free Gemini key above to run live extraction.</div>""",
+            <strong>Demo mode.</strong> No API key set, showing a pre-computed example below.
+            Enter a free Gemini key above to extract structure from your own review.</div>""",
             unsafe_allow_html=True)
         st.markdown(
             f"""<div class="blk" style="margin-bottom:1rem;">
@@ -743,86 +759,91 @@ def section_llm_features(meta, tfidf_model):
 # 05 · INSIGHTS
 # ─────────────────────────────────────────────────────────────────────────────
 def section_business_insights(meta):
-    st.markdown('<div class="idx">05 / INSIGHTS</div>', unsafe_allow_html=True)
+    st.markdown('<div class="idx">04 / INSIGHTS</div>', unsafe_allow_html=True)
     st.markdown("## What drives churn")
-    tabs = st.tabs(["Predictive words", "Feature impact", "Sentiment split"])
+    st.markdown(
+        f'<p class="lede">Three reads on the same question: which words carry the signal, '
+        f'which engineered features the model leans on, and how sentiment itself splits '
+        f'churn from retention.</p>', unsafe_allow_html=True)
 
-    with tabs[0]:
-        st.markdown(
-            f'<p class="lede">The 20 most predictive tokens from the TF-IDF logistic-regression '
-            f'coefficients, split by direction.</p>', unsafe_allow_html=True)
-        wc1, wc2 = st.columns(2, gap="medium")
-        with wc1:
-            churn_w = meta["top_churn_words"]
-            fig = go.Figure(go.Bar(x=list(range(len(churn_w), 0, -1)), y=churn_w,
-                                   orientation="h", marker_color=RED))
-            fig.update_layout(**PLOTLY_LAYOUT, title="Churn signal words",
-                              xaxis_title="Relative rank", height=520)
-            st.plotly_chart(fig, use_container_width=True)
-        with wc2:
-            retain_w = meta["top_retain_words"]
-            fig2 = go.Figure(go.Bar(x=list(range(len(retain_w), 0, -1)), y=retain_w,
-                                    orientation="h", marker_color=INK))
-            fig2.update_layout(**PLOTLY_LAYOUT, title="Retention signal words",
-                               xaxis_title="Relative rank", height=520)
-            st.plotly_chart(fig2, use_container_width=True)
-
-    with tabs[1]:
-        st.markdown(
-            f'<p class="lede">SHAP values for the engineered XGBoost model on 200 held-out '
-            f'reviews. Positive pushes the prediction toward churn.</p>', unsafe_allow_html=True)
-        shap_vals  = np.array(meta["shap_values"])
-        feat_names = meta["shap_feature_names"]
-        X_sample   = meta["X_test_features_sample"]
-        X_arr = X_sample.values if isinstance(X_sample, pd.DataFrame) else np.array(X_sample)
-        mean_abs = np.abs(shap_vals).mean(axis=0)
-        order    = np.argsort(mean_abs)
-        sorted_names = [feat_names[i] for i in order]
-        sorted_shap  = shap_vals[:, order]
-        sorted_X     = X_arr[:, order]
-        X_norm = (sorted_X - sorted_X.min(axis=0)) / (np.ptp(sorted_X, axis=0) + 1e-9)
-        rng_j = np.random.default_rng(42)
-        jitter = rng_j.uniform(-0.35, 0.35, size=sorted_shap.shape)
-        fig = go.Figure()
-        for j, fname in enumerate(sorted_names):
-            fig.add_trace(go.Scatter(
-                x=sorted_shap[:, j], y=np.full(sorted_shap.shape[0], j) + jitter[:, j],
-                mode="markers", name=fname, showlegend=False,
-                marker=dict(size=4, color=X_norm[:, j],
-                            colorscale=[[0, INK_60], [0.5, "#BFB8A8"], [1, RED]],
-                            opacity=0.65,
-                            colorbar=dict(title="Feature<br>value", thickness=10, len=0.7)
-                            if j == len(sorted_names) - 1 else None)))
-        fig.update_layout(**PLOTLY_LAYOUT, title="SHAP beeswarm, engineered features",
-                          xaxis_title="SHAP value (impact on churn probability)",
-                          yaxis=dict(tickvals=list(range(len(sorted_names))), ticktext=sorted_names),
-                          height=600)
+    # ── Predictive words ────────────────────────────────────────────────────
+    rule("Predictive words", "TF-IDF logistic-regression coefficients")
+    st.markdown(
+        f'<p class="lede">The 20 most predictive tokens, split by direction.</p>',
+        unsafe_allow_html=True)
+    wc1, wc2 = st.columns(2, gap="medium")
+    with wc1:
+        churn_w = meta["top_churn_words"]
+        fig = go.Figure(go.Bar(x=list(range(len(churn_w), 0, -1)), y=churn_w,
+                               orientation="h", marker_color=RED))
+        fig.update_layout(**PLOTLY_LAYOUT, title="Churn signal words",
+                          xaxis_title="Relative rank", height=520)
         st.plotly_chart(fig, use_container_width=True)
+    with wc2:
+        retain_w = meta["top_retain_words"]
+        fig2 = go.Figure(go.Bar(x=list(range(len(retain_w), 0, -1)), y=retain_w,
+                                orientation="h", marker_color=INK))
+        fig2.update_layout(**PLOTLY_LAYOUT, title="Retention signal words",
+                           xaxis_title="Relative rank", height=520)
+        st.plotly_chart(fig2, use_container_width=True)
 
-    with tabs[2]:
-        st.markdown(
-            f'<p class="lede">VADER compound-score distribution for churn versus retained '
-            f'reviews. Where the two diverge is the signal the models exploit.</p>',
-            unsafe_allow_html=True)
-        vader_stats = meta.get("vader_stats", {})
-        churn_vals  = vader_stats.get("churn", [])
-        retain_vals = vader_stats.get("retain", [])
-        fig = go.Figure()
-        fig.add_trace(go.Histogram(x=churn_vals, name="Churn", marker_color=RED,
-                                   opacity=0.75, nbinsx=50, histnorm="probability"))
-        fig.add_trace(go.Histogram(x=retain_vals, name="Retained", marker_color=INK,
-                                   opacity=0.6, nbinsx=50, histnorm="probability"))
-        fig.update_layout(**PLOTLY_LAYOUT, barmode="overlay",
-                          title="VADER compound score distribution",
-                          xaxis_title="Compound score (minus one to plus one)",
-                          yaxis_title="Probability", height=420, legend=dict(x=0.02, y=0.98))
-        st.plotly_chart(fig, use_container_width=True)
-        if churn_vals and retain_vals:
-            churn_med  = float(np.median(churn_vals))
-            retain_med = float(np.median(retain_vals))
-            st.caption(
-                f"Median compound, churn {churn_med:.3f} versus retained {retain_med:.3f}. "
-                "Where the distributions overlap, models lean on subtler linguistic cues.")
+    # ── Feature impact ──────────────────────────────────────────────────────
+    rule("Feature impact", "SHAP, engineered XGBoost, 200 held-out reviews")
+    st.markdown(
+        f'<p class="lede">SHAP values for the engineered XGBoost model. Positive pushes the '
+        f'prediction toward churn.</p>', unsafe_allow_html=True)
+    shap_vals  = np.array(meta["shap_values"])
+    feat_names = meta["shap_feature_names"]
+    X_sample   = meta["X_test_features_sample"]
+    X_arr = X_sample.values if isinstance(X_sample, pd.DataFrame) else np.array(X_sample)
+    mean_abs = np.abs(shap_vals).mean(axis=0)
+    order    = np.argsort(mean_abs)
+    sorted_names = [feat_names[i] for i in order]
+    sorted_shap  = shap_vals[:, order]
+    sorted_X     = X_arr[:, order]
+    X_norm = (sorted_X - sorted_X.min(axis=0)) / (np.ptp(sorted_X, axis=0) + 1e-9)
+    rng_j = np.random.default_rng(42)
+    jitter = rng_j.uniform(-0.35, 0.35, size=sorted_shap.shape)
+    fig = go.Figure()
+    for j, fname in enumerate(sorted_names):
+        fig.add_trace(go.Scatter(
+            x=sorted_shap[:, j], y=np.full(sorted_shap.shape[0], j) + jitter[:, j],
+            mode="markers", name=fname, showlegend=False,
+            marker=dict(size=4, color=X_norm[:, j],
+                        colorscale=[[0, INK_60], [0.5, "#BFB8A8"], [1, RED]],
+                        opacity=0.65,
+                        colorbar=dict(title="Feature<br>value", thickness=10, len=0.7)
+                        if j == len(sorted_names) - 1 else None)))
+    fig.update_layout(**PLOTLY_LAYOUT, title="SHAP beeswarm, engineered features",
+                      xaxis_title="SHAP value (impact on churn probability)",
+                      yaxis=dict(tickvals=list(range(len(sorted_names))), ticktext=sorted_names),
+                      height=600)
+    st.plotly_chart(fig, use_container_width=True)
+
+    # ── Sentiment split ─────────────────────────────────────────────────────
+    rule("Sentiment split", "VADER compound score, churn vs retained")
+    st.markdown(
+        f'<p class="lede">Where the two distributions diverge is the signal the models '
+        f'exploit.</p>', unsafe_allow_html=True)
+    vader_stats = meta.get("vader_stats", {})
+    churn_vals  = vader_stats.get("churn", [])
+    retain_vals = vader_stats.get("retain", [])
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=churn_vals, name="Churn", marker_color=RED,
+                               opacity=0.75, nbinsx=50, histnorm="probability"))
+    fig.add_trace(go.Histogram(x=retain_vals, name="Retained", marker_color=INK,
+                               opacity=0.6, nbinsx=50, histnorm="probability"))
+    fig.update_layout(**PLOTLY_LAYOUT, barmode="overlay",
+                      title="VADER compound score distribution",
+                      xaxis_title="Compound score (minus one to plus one)",
+                      yaxis_title="Probability", height=420, legend=dict(x=0.02, y=0.98))
+    st.plotly_chart(fig, use_container_width=True)
+    if churn_vals and retain_vals:
+        churn_med  = float(np.median(churn_vals))
+        retain_med = float(np.median(retain_vals))
+        st.caption(
+            f"Median compound, churn {churn_med:.3f} versus retained {retain_med:.3f}. "
+            "Where the distributions overlap, models lean on subtler linguistic cues.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -832,7 +853,7 @@ def page_no_models():
     st.markdown("Run the training pipeline from the project root, then reload.")
     st.code("python src/train.py", language="bash")
     st.markdown(
-        "Downloads the Yelp Review Full dataset on first run, trains five NLP models, "
+        "Downloads the Yelp Review Full dataset on first run, trains the NLP models, "
         "and writes artifacts to `models/`. Roughly 20 to 60 minutes depending on hardware.")
 
 
@@ -849,10 +870,8 @@ def main():
         section_overview(meta)
     elif page == "Models":
         section_model_comparison(meta)
-    elif page == "Analyzer":
-        section_text_analyzer(meta, tfidf_model, feat_model, emb_model)
-    elif page == "LLM Extract":
-        section_llm_features(meta, tfidf_model)
+    elif page == "Analyze":
+        section_analyze(meta, tfidf_model, feat_model, emb_model)
     elif page == "Insights":
         section_business_insights(meta)
 

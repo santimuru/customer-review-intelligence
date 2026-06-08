@@ -1,12 +1,13 @@
-# Secrets — nunca subir a GitHub
-.env
 
+!models/
 # HuggingFace dataset cache (large, re-downloaded at runtime)
-data/
-__pycache__/
+# Keep model artifacts (pre-trained, needed for app)
+# Secrets — nunca subir a GitHub
+*.log
 *.pyc
 .env
-*.log
-
-# Keep model artifacts (pre-trained, needed for app)
-!models/
+__pycache__/
+_live_*.png
+_qa/
+_shot.py
+data/
