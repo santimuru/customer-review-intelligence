@@ -154,7 +154,7 @@ div[data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) > div:la
   border-right:none; margin:1.4rem 0; }}
 .kpi {{ border-right:1px solid {INK}; padding:1rem 1.1rem; }}
 .kpi .v {{ font-family:'Archivo Expanded',sans-serif; font-weight:900;
-  font-size:2.3rem; line-height:1; color:{INK}; }}
+  font-size:clamp(1.5rem,6vw,2.3rem); line-height:1; color:{INK}; }}
 .kpi .v.accent {{ color:{RED}; }}
 .kpi .k {{ font-size:0.68rem; text-transform:uppercase; letter-spacing:0.12em;
   color:{INK_60}; margin-top:0.5rem; font-weight:600; }}
@@ -163,8 +163,8 @@ div[data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) > div:la
 .steps {{ display:grid; grid-template-columns:repeat(4,1fr); border:1px solid {INK};
   border-right:none; }}
 .step {{ border-right:1px solid {INK}; padding:1rem 1.1rem; min-height:170px; }}
-.step .n {{ font-family:'Archivo Expanded',sans-serif; font-weight:900; font-size:1.5rem;
-  color:{RED}; }}
+.step .n {{ font-family:'Archivo Expanded',sans-serif; font-weight:900;
+  font-size:clamp(1.5rem,6vw,2.3rem); color:{RED}; }}
 .step .t {{ font-weight:800; text-transform:uppercase; font-size:0.82rem;
   letter-spacing:0.02em; margin:0.4rem 0; }}
 .step .d {{ font-size:0.82rem; color:{INK_60}; line-height:1.45; }}
@@ -176,8 +176,8 @@ div[data-testid="stRadio"] [role="radiogroup"] label:has(input:checked) > div:la
 
 /* score block */
 .score {{ border:1px solid {INK}; padding:1rem; }}
-.score .v {{ font-family:'Archivo Expanded',sans-serif; font-weight:900; font-size:2.1rem;
-  line-height:1; }}
+.score .v {{ font-family:'Archivo Expanded',sans-serif; font-weight:900;
+  font-size:clamp(1.5rem,6vw,2.1rem); line-height:1; }}
 .score .m {{ font-size:0.7rem; text-transform:uppercase; letter-spacing:0.1em;
   color:{INK_60}; font-weight:600; }}
 
@@ -205,6 +205,19 @@ textarea, input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] >
   border:1px solid {INK} !important; background:{PAPER} !important; color:{INK} !important;
 }}
 ::placeholder {{ color:{INK_60} !important; }}
+
+/* ===== Mobile responsive ===== */
+@media (max-width: 640px) {{
+  [data-testid="stHorizontalBlock"] {{ flex-direction:column !important; gap:.75rem !important; }}
+  [data-testid="stHorizontalBlock"] > [data-testid="column"],
+  [data-testid="stColumn"] {{ width:100% !important; flex:1 1 100% !important; min-width:0 !important; }}
+  .kpis, .steps {{ grid-template-columns:1fr !important; gap:0 !important; border-right:1px solid {INK} !important; }}
+  .step {{ min-height:auto !important; }}
+  .block-container {{ padding-left:1rem !important; padding-right:1rem !important; }}
+}}
+@media (min-width:641px) and (max-width:960px) {{
+  .kpis, .steps {{ grid-template-columns:repeat(2,1fr) !important; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
